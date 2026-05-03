@@ -70,15 +70,6 @@ st.markdown(f"""
 # -------------------------------
 # KPI CARDS
 # -------------------------------
-# Example: Adding a quick sentiment logic
-from textblob import TextBlob
-
-def get_sentiment(text):
-    score = TextBlob(str(text)).sentiment.polarity
-    return "Positive" if score > 0 else "Negative"
-
-# Create the column on the fly
-df['sentiment'] = df['Text'].apply(get_sentiment)
 col1, col2, col3 = st.columns(3)
 with col1:
     st.markdown(f'<div class="kpi-card"><div class="kpi-value">{len(df)}</div><div class="kpi-label">Total Customers</div></div>', unsafe_allow_html=True)
@@ -104,7 +95,7 @@ fig2 = px.bar(sentiment_counts, x="cluster", y="count", color="sentiment", barmo
 st.plotly_chart(fig2, use_container_width=True)
 
 st.subheader("PCA Scatter Plot")
-reduced = np.random.rand(len(df), 2)  # placeholder
+reduced = np.random.rand(len(df), 2)  # placeholder for dimensionality reduction
 fig3 = px.scatter(x=reduced[:,0], y=reduced[:,1], color=df['cluster'].astype(str))
 st.plotly_chart(fig3, use_container_width=True)
 
