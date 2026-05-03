@@ -4,3 +4,4 @@ wordcloud
 pandas
 scikit-learn
 matplotlib
+openpyxl
