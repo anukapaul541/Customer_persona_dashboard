@@ -26,33 +26,13 @@ df = load_data()
 # -------------------------------
 st.markdown("""
 <style>
-.navbar {
-    background-color: #131921;
-    padding: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    color: white;
-}
-.kpi-card {
-    background-color: white;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
-    text-align: center;
-    margin: 10px;
-}
-.kpi-value { font-size: 24px; font-weight: bold; }
-.kpi-label { font-size: 14px; color: #555; }
-.carousel-container {
-    display: flex; overflow-x: auto; scroll-behavior: smooth;
-}
-.carousel-card {
-    flex: 0 0 auto; background: white; border-radius: 10px;
-    box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
-    margin: 10px; width: 200px; text-align: center;
-}
-.carousel-card img { width: 100%; border-radius: 10px 10px 0 0; }
+.navbar {background-color:#131921;padding:10px;display:flex;justify-content:space-between;align-items:center;color:white;}
+.kpi-card {background-color:white;padding:20px;border-radius:10px;box-shadow:2px 2px 8px rgba(0,0,0,0.1);text-align:center;margin:10px;}
+.kpi-value {font-size:24px;font-weight:bold;}
+.kpi-label {font-size:14px;color:#555;}
+.carousel-container {display:flex;overflow-x:auto;scroll-behavior:smooth;}
+.carousel-card {flex:0 0 auto;background:white;border-radius:10px;box-shadow:2px 2px 8px rgba(0,0,0,0.1);margin:10px;width:200px;text-align:center;}
+.carousel-card img {width:100%;border-radius:10px 10px 0 0;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,56 +52,60 @@ st.markdown(f"""
 # -------------------------------
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.markdown(f'<div class="kpi-card"><div class="kpi-value">{len(df)}</div><div class="kpi-label">Total Customers</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="kpi-card"><div class="kpi-value">{len(df)}</div><div class="kpi-label">Total Reviews</div></div>', unsafe_allow_html=True)
 with col2:
-    pos_pct = (df['sentiment'].eq("Positive").mean() * 100)
-    st.markdown(f'<div class="kpi-card"><div class="kpi-value">{pos_pct:.1f}%</div><div class="kpi-label">Positive Sentiment</div></div>', unsafe_allow_html=True)
+    if "sentiment" in df.columns:
+        pos_pct = (df['sentiment'].eq("Positive").mean() * 100)
+        st.markdown(f'<div class="kpi-card"><div class="kpi-value">{pos_pct:.1f}%</div><div class="kpi-label">Positive Sentiment</div></div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-value">N/A</div><div class="kpi-label">Positive Sentiment</div></div>', unsafe_allow_html=True)
 with col3:
-    clusters = df['cluster'].nunique()
-    st.markdown(f'<div class="kpi-card"><div class="kpi-value">{clusters}</div><div class="kpi-label">Number of Clusters</div></div>', unsafe_allow_html=True)
+    if "cluster" in df.columns:
+        clusters = df['cluster'].nunique()
+        st.markdown(f'<div class="kpi-card"><div class="kpi-value">{clusters}</div><div class="kpi-label">Number of Clusters</div></div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-value">N/A</div><div class="kpi-label">Number of Clusters</div></div>', unsafe_allow_html=True)
 
 # -------------------------------
 # ANALYTICS
 # -------------------------------
-st.subheader("Cluster Distribution")
-cluster_counts = df['cluster'].value_counts().reset_index()
-cluster_counts.columns = ["cluster", "count"]
-fig = px.bar(cluster_counts, x="cluster", y="count", color="cluster")
-st.plotly_chart(fig, use_container_width=True)
+if "cluster" in df.columns:
+    st.subheader("Cluster Distribution")
+    cluster_counts = df['cluster'].value_counts().reset_index()
+    cluster_counts.columns = ["cluster", "count"]
+    fig = px.bar(cluster_counts, x="cluster", y="count", color="cluster")
+    st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("Sentiment Distribution")
-sentiment_counts = df.groupby(["cluster", "sentiment"]).size().reset_index(name="count")
-fig2 = px.bar(sentiment_counts, x="cluster", y="count", color="sentiment", barmode="stack")
-st.plotly_chart(fig2, use_container_width=True)
+if "sentiment" in df.columns and "cluster" in df.columns:
+    st.subheader("Sentiment Distribution")
+    sentiment_counts = df.groupby(["cluster", "sentiment"]).size().reset_index(name="count")
+    fig2 = px.bar(sentiment_counts, x="cluster", y="count", color="sentiment", barmode="stack")
+    st.plotly_chart(fig2, use_container_width=True)
 
-st.subheader("PCA Scatter Plot")
-reduced = np.random.rand(len(df), 2)  # placeholder for dimensionality reduction
-fig3 = px.scatter(x=reduced[:,0], y=reduced[:,1], color=df['cluster'].astype(str))
+st.subheader("PCA Scatter Plot (Placeholder)")
+reduced = np.random.rand(len(df), 2)
+fig3 = px.scatter(x=reduced[:,0], y=reduced[:,1], color=df['cluster'].astype(str) if "cluster" in df.columns else None)
 st.plotly_chart(fig3, use_container_width=True)
-
-st.subheader("Keyword Heatmap (Placeholder)")
-heatmap_data = pd.DataFrame({"Keyword":["price","quality","cheap","service"],"Cluster":[0,1,2,3],"Frequency":[10,20,5,15]})
-fig4 = px.density_heatmap(heatmap_data, x="Cluster", y="Keyword", z="Frequency", color_continuous_scale="Blues")
-st.plotly_chart(fig4, use_container_width=True)
 
 # -------------------------------
 # PERSONAS
 # -------------------------------
-st.subheader("Persona Insights")
-persona_map = {0:"Budget Buyers",1:"Quality Seekers",2:"Dissatisfied Users",3:"Loyal Customers"}
-cluster_choice = st.selectbox("Select Cluster", df['cluster'].unique())
-persona_name = persona_map.get(cluster_choice,"Unknown")
-st.write(f"**Persona: {persona_name}**")
-st.write("Description: Typical behavior and preferences of this cluster.")
-sentiment_breakdown = df[df['cluster']==cluster_choice]['sentiment'].value_counts(normalize=True)*100
-st.write(sentiment_breakdown)
-
-text = " ".join(df[df['cluster']==cluster_choice]['clean_text'])
-wc = WordCloud(background_color="white").generate(text)
-fig_wc, ax = plt.subplots()
-ax.imshow(wc, interpolation="bilinear")
-ax.axis("off")
-st.pyplot(fig_wc)
+if "cluster" in df.columns:
+    st.subheader("Persona Insights")
+    persona_map = {0:"Budget Buyers",1:"Quality Seekers",2:"Dissatisfied Users",3:"Loyal Customers"}
+    cluster_choice = st.selectbox("Select Cluster", df['cluster'].unique())
+    persona_name = persona_map.get(cluster_choice,"Unknown")
+    st.write(f"**Persona: {persona_name}**")
+    if "sentiment" in df.columns:
+        sentiment_breakdown = df[df['cluster']==cluster_choice]['sentiment'].value_counts(normalize=True)*100
+        st.write(sentiment_breakdown)
+    if "clean_text" in df.columns:
+        text = " ".join(df[df['cluster']==cluster_choice]['clean_text'])
+        wc = WordCloud(background_color="white").generate(text)
+        fig_wc, ax = plt.subplots()
+        ax.imshow(wc, interpolation="bilinear")
+        ax.axis("off")
+        st.pyplot(fig_wc)
 
 # -------------------------------
 # REVIEW UPLOAD
