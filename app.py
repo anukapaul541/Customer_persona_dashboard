@@ -52,7 +52,7 @@ st.markdown(f"""
 # -------------------------------
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.markdown(f'<div class="kpi-card"><div class="kpi-value">{len(df)}</div><div class="kpi-label">Total Reviews</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="kpi-card"><div class="kpi-value">{len(df)}</div><div class="kpi-label">Total Customers</div></div>', unsafe_allow_html=True)
 with col2:
     if "sentiment" in df.columns:
         pos_pct = (df['sentiment'].eq("Positive").mean() * 100)
@@ -67,35 +67,53 @@ with col3:
         st.markdown(f'<div class="kpi-card"><div class="kpi-value">N/A</div><div class="kpi-label">Number of Clusters</div></div>', unsafe_allow_html=True)
 
 # -------------------------------
-# ANALYTICS
+# ANALYTICS SECTION
 # -------------------------------
+st.subheader("Cluster Distribution")
 if "cluster" in df.columns:
-    st.subheader("Cluster Distribution")
     cluster_counts = df['cluster'].value_counts().reset_index()
     cluster_counts.columns = ["cluster", "count"]
     fig = px.bar(cluster_counts, x="cluster", y="count", color="cluster")
     st.plotly_chart(fig, use_container_width=True)
 
+st.subheader("Sentiment Distribution")
 if "sentiment" in df.columns and "cluster" in df.columns:
-    st.subheader("Sentiment Distribution")
     sentiment_counts = df.groupby(["cluster", "sentiment"]).size().reset_index(name="count")
     fig2 = px.bar(sentiment_counts, x="cluster", y="count", color="sentiment", barmode="stack")
     st.plotly_chart(fig2, use_container_width=True)
 
-st.subheader("PCA Scatter Plot (Placeholder)")
+st.subheader("PCA Scatter Plot")
 reduced = np.random.rand(len(df), 2)
 fig3 = px.scatter(x=reduced[:,0], y=reduced[:,1], color=df['cluster'].astype(str) if "cluster" in df.columns else None)
 st.plotly_chart(fig3, use_container_width=True)
 
+st.subheader("Average Rating by Cluster")
+if "cluster" in df.columns and "rating" in df.columns:
+    avg_rating = df.groupby("cluster")["rating"].mean().reset_index()
+    fig4 = px.bar(avg_rating, x="cluster", y="rating", color="cluster")
+    st.plotly_chart(fig4, use_container_width=True)
+
+st.subheader("Sentiment Polarity Across Clusters")
+if "cluster" in df.columns and "sentiment" in df.columns:
+    sentiment_polarity = df.groupby("cluster")["sentiment"].value_counts(normalize=True).reset_index(name="pct")
+    fig5 = px.bar(sentiment_polarity, x="cluster", y="pct", color="sentiment", barmode="group")
+    st.plotly_chart(fig5, use_container_width=True)
+
+st.subheader("Keyword Heatmap (Placeholder)")
+heatmap_data = pd.DataFrame({"Keyword":["price","quality","cheap","service"],"Cluster":[0,1,2,3],"Frequency":[10,20,5,15]})
+fig6 = px.density_heatmap(heatmap_data, x="Cluster", y="Keyword", z="Frequency", color_continuous_scale="Blues")
+st.plotly_chart(fig6, use_container_width=True)
+
 # -------------------------------
-# PERSONAS
+# PERSONA INSIGHTS
 # -------------------------------
+st.subheader("Persona Insights")
 if "cluster" in df.columns:
-    st.subheader("Persona Insights")
     persona_map = {0:"Budget Buyers",1:"Quality Seekers",2:"Dissatisfied Users",3:"Loyal Customers"}
     cluster_choice = st.selectbox("Select Cluster", df['cluster'].unique())
     persona_name = persona_map.get(cluster_choice,"Unknown")
     st.write(f"**Persona: {persona_name}**")
+    st.write("Description: Typical behavior and preferences of this cluster.")
     if "sentiment" in df.columns:
         sentiment_breakdown = df[df['cluster']==cluster_choice]['sentiment'].value_counts(normalize=True)*100
         st.write(sentiment_breakdown)
@@ -130,6 +148,8 @@ if user_input:
         response = "The best persona is Loyal Customers (Cluster 3)."
     elif "worst cluster" in user_input.lower():
         response = "The worst cluster is Dissatisfied Users (Cluster 2)."
+    elif "strategy" in user_input.lower():
+        response = "Strategy suggestion: Improve product quality and reward loyalty."
     else:
         response = "I'm here to help with personas and strategies."
     st.session_state.messages.append(("assistant", response))
@@ -143,7 +163,7 @@ st.subheader("Product Carousel")
 st.markdown("""
 <div class="carousel-container">
     <div class="carousel-card"><img src="https://via.placeholder.com/200x150"/><h4>Smart Speaker</h4><p>$49.99</p></div>
-    <div class="carousel-card"><img src="https://via.placeholder.com/200x150"/><h4>Fitness Watch</h4><p>$89.99</p></div>
+    <div class="carousel-card"><img src="https://via.placeholder.com/200x150"/><h4>Fitness Tracker</h4><p>$89.99</p></div>
     <div class="carousel-card"><img src="https://via.placeholder.com/200x150"/><h4>Wireless Headphones</h4><p>$59.99</p></div>
 </div>
 """, unsafe_allow_html=True)
