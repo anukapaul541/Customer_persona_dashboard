@@ -70,6 +70,15 @@ st.markdown(f"""
 # -------------------------------
 # KPI CARDS
 # -------------------------------
+# Example: Adding a quick sentiment logic
+from textblob import TextBlob
+
+def get_sentiment(text):
+    score = TextBlob(str(text)).sentiment.polarity
+    return "Positive" if score > 0 else "Negative"
+
+# Create the column on the fly
+df['sentiment'] = df['Text'].apply(get_sentiment)
 col1, col2, col3 = st.columns(3)
 with col1:
     st.markdown(f'<div class="kpi-card"><div class="kpi-value">{len(df)}</div><div class="kpi-label">Total Customers</div></div>', unsafe_allow_html=True)
