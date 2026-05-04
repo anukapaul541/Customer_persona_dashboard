@@ -5,6 +5,6 @@ scikit-learn
 plotly
 wordcloud
 matplotlib
-vaderSentiment
+nltk
 openpyxl
 Pillow
