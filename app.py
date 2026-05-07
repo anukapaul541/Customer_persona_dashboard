@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Customer Persona Intelligence Platform  (NLP-Based)
+#  Customer Persona Intelligence Platform  (NLP-Based) — Interactive Edition
 #  Author  : MBA Business Analytics — NLP Final Project
 #  Deploy  : streamlit run app.py
 #  Cloud   : share.streamlit.io  (upload app.py + Amazon_Reviews.xlsx)
@@ -53,10 +53,22 @@ html, body, [class*="css"] {
 section[data-testid="stSidebar"] {
     background: #131921 !important;
     border-right: 1px solid #232f3e;
+    width: 280px !important;
 }
 section[data-testid="stSidebar"] .stMetric label,
 section[data-testid="stSidebar"] .stMetric div {
     color: #d1d5db !important;
+}
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stMultiSelect label,
+section[data-testid="stSidebar"] .stSlider label,
+section[data-testid="stSidebar"] .stRadio label,
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span {
+    color: #d1d5db !important;
+}
+section[data-testid="stSidebar"] .stSlider [data-testid="stThumbValue"] {
+    color: #fff !important;
 }
 header[data-testid="stHeader"] { display: none !important; }
 footer { display: none !important; }
@@ -191,6 +203,49 @@ div[data-testid="stDecoration"] { display: none !important; }
     font-size: 14px; font-weight: 700; color: #374151;
     margin-bottom: 14px; display: flex; align-items: center; gap: 6px;
 }
+
+/* ── Filter pill badge ── */
+.filter-active-badge {
+    display: inline-block;
+    background: #ff9900;
+    color: #131921;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+.filter-panel-header {
+    font-size: 11px;
+    color: #ff9900;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 700;
+    padding: 0 8px 6px 8px;
+    margin-top: 4px;
+}
+.filter-divider {
+    border: none;
+    border-top: 1px solid #232f3e;
+    margin: 10px 0;
+}
+.filter-reset-hint {
+    font-size: 10px;
+    color: #6b7280;
+    text-align: center;
+    padding: 4px 0 10px 0;
+}
+.active-filter-summary {
+    background: #1e2a3a;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 11px;
+    color: #9ca3af;
+    line-height: 1.8;
+    margin: 8px 0 4px 0;
+}
+.active-filter-summary b { color: #ff9900; }
 
 /* ── Carousel ── */
 .carousel-outer {
@@ -419,6 +474,18 @@ def load_and_process():
     oc    = km.cluster_centers_.argsort()[:, ::-1]
     kw    = {i: [terms[j] for j in oc[i, :12]] for i in range(4)}
 
+    # Simulate time dimension (since Amazon_Reviews has no real date per review)
+    np.random.seed(42)
+    base = pd.Timestamp("2022-01-01")
+    raw["review_date"] = [base + pd.Timedelta(days=int(x))
+                          for x in np.random.randint(0, 730, size=len(raw))]
+    raw["year_month"]  = raw["review_date"].dt.to_period("M").astype(str)
+    raw["quarter"]     = raw["review_date"].dt.to_period("Q").astype(str)
+
+    # Simulate location dimension
+    locations = ["North", "South", "East", "West", "Central"]
+    raw["location"] = np.random.choice(locations, size=len(raw))
+
     return raw, kw
 
 
@@ -426,7 +493,7 @@ df, TOP_KW = load_and_process()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  PERSONA DICTIONARY   (Cluster 0→Budget Buyers … 3→Loyal Customers)
+#  PERSONA DICTIONARY
 # ═══════════════════════════════════════════════════════════════════════════════
 PERSONAS = {
     0: {
@@ -564,15 +631,78 @@ def fig_to_b64(fig, dpi=120):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CHART FUNCTIONS
+#  FILTER STATE HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
-def chart_cluster_donut():
-    counts = df["cluster"].value_counts().sort_index()
-    labels = [f"{PERSONAS[i]['icon']} {PERSONAS[i]['name']}" for i in counts.index]
+def get_filtered_df():
+    """Return df filtered by current sidebar filter state."""
+    fdf = df.copy()
+
+    # Persona / cluster filter
+    sel_personas = st.session_state.get("f_personas", list(range(4)))
+    if sel_personas:
+        fdf = fdf[fdf["cluster"].isin(sel_personas)]
+
+    # Sentiment filter
+    sel_sentiment = st.session_state.get("f_sentiment", ["Positive", "Neutral", "Negative"])
+    if sel_sentiment:
+        fdf = fdf[fdf["sentiment"].isin(sel_sentiment)]
+
+    # Rating filter
+    r_min, r_max = st.session_state.get("f_rating", (1, 5))
+    fdf = fdf[(fdf["rating"] >= r_min) & (fdf["rating"] <= r_max)]
+
+    # Location filter
+    sel_locs = st.session_state.get("f_location", df["location"].unique().tolist())
+    if sel_locs:
+        fdf = fdf[fdf["location"].isin(sel_locs)]
+
+    # Time granularity + period filter
+    time_gran = st.session_state.get("f_time_gran", "All Time")
+    if time_gran == "By Quarter":
+        sel_quarters = st.session_state.get("f_quarters", sorted(df["quarter"].unique().tolist()))
+        if sel_quarters:
+            fdf = fdf[fdf["quarter"].isin(sel_quarters)]
+    elif time_gran == "By Month":
+        sel_months = st.session_state.get("f_months", sorted(df["year_month"].unique().tolist()))
+        if sel_months:
+            fdf = fdf[fdf["year_month"].isin(sel_months)]
+
+    return fdf
+
+
+def filters_are_active():
+    """Returns True if any non-default filter is set."""
+    default_personas = set(range(4))
+    cur_personas = set(st.session_state.get("f_personas", list(range(4))))
+    if cur_personas != default_personas:
+        return True
+    sel_sent = set(st.session_state.get("f_sentiment", ["Positive","Neutral","Negative"]))
+    if sel_sent != {"Positive","Neutral","Negative"}:
+        return True
+    r = st.session_state.get("f_rating", (1, 5))
+    if r != (1, 5):
+        return True
+    all_locs = set(df["location"].unique().tolist())
+    cur_locs = set(st.session_state.get("f_location", list(all_locs)))
+    if cur_locs != all_locs:
+        return True
+    if st.session_state.get("f_time_gran", "All Time") != "All Time":
+        return True
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CHART FUNCTIONS  (accept filtered dataframe)
+# ═══════════════════════════════════════════════════════════════════════════════
+def chart_cluster_donut(fdf):
+    counts = fdf["cluster"].value_counts().sort_index()
+    if counts.empty:
+        return go.Figure()
+    labels = [f"{PERSONAS[i]['icon']} {PERSONAS[i]['name']}" for i in counts.index if i in PERSONAS]
     fig = go.Figure(go.Pie(
         labels=labels, values=counts.values,
         hole=0.56,
-        marker=dict(colors=[COLORS[i] for i in counts.index],
+        marker=dict(colors=[COLORS[i] for i in counts.index if i in COLORS],
                     line=dict(color="#f5f5f5", width=3)),
         textinfo="percent",
         textfont=dict(size=12, color="#111827"),
@@ -583,7 +713,7 @@ def chart_cluster_donut():
         paper_bgcolor="rgba(0,0,0,0)",
         legend=dict(orientation="v", font=dict(size=11), x=1.0, y=0.5),
         annotations=[dict(
-            text=f"<b>{len(df):,}</b><br><span style='font-size:10px'>reviews</span>",
+            text=f"<b>{len(fdf):,}</b><br><span style='font-size:10px'>reviews</span>",
             x=0.5, y=0.5, font=dict(size=14, color="#111827"),
             showarrow=False,
         )],
@@ -591,14 +721,16 @@ def chart_cluster_donut():
     return fig
 
 
-def chart_sentiment_stacked():
+def chart_sentiment_stacked(fdf):
     order   = ["Positive", "Neutral", "Negative"]
     pal     = {"Positive": "#10b981", "Neutral": "#f59e0b", "Negative": "#ef4444"}
-    data    = df.groupby(["cluster", "sentiment"]).size().unstack(fill_value=0)
+    if fdf.empty:
+        return go.Figure()
+    data    = fdf.groupby(["cluster", "sentiment"]).size().unstack(fill_value=0)
     for c in order:
-        if c not in data: data[c] = 0
+        if c not in data.columns: data[c] = 0
     pct = data[order].div(data[order].sum(axis=1), axis=0) * 100
-    xlabels = [f"{PERSONAS[i]['icon']} {PERSONAS[i]['name']}" for i in pct.index]
+    xlabels = [f"{PERSONAS[i]['icon']} {PERSONAS[i]['name']}" for i in pct.index if i in PERSONAS]
     fig = go.Figure()
     for s in order:
         fig.add_trace(go.Bar(
@@ -620,10 +752,14 @@ def chart_sentiment_stacked():
     return fig
 
 
-def chart_rating_dist():
+def chart_rating_dist(fdf):
+    if fdf.empty:
+        return go.Figure()
     fig = go.Figure()
     for cid, p in PERSONAS.items():
-        sub = df[df["cluster"] == cid]
+        sub = fdf[fdf["cluster"] == cid]
+        if sub.empty:
+            continue
         vc  = sub["rating"].value_counts().sort_index()
         fig.add_trace(go.Bar(
             name=f"{p['icon']} {p['name']}",
@@ -643,11 +779,13 @@ def chart_rating_dist():
     return fig
 
 
-def chart_pca(sample_n=1200):
-    s = df.sample(min(sample_n, len(df)), random_state=42)
+def chart_pca(fdf, sample_n=1200):
+    if fdf.empty:
+        return go.Figure()
+    s = fdf.sample(min(sample_n, len(fdf)), random_state=42)
     fig = px.scatter(
         s, x="pca_x", y="pca_y",
-        color=s["cluster"].map(lambda c: f"{PERSONAS[c]['icon']} {PERSONAS[c]['name']}"),
+        color=s["cluster"].map(lambda c: f"{PERSONAS[c]['icon']} {PERSONAS[c]['name']}" if c in PERSONAS else str(c)),
         color_discrete_map={
             f"{PERSONAS[c]['icon']} {PERSONAS[c]['name']}": COLORS[c]
             for c in COLORS
@@ -675,10 +813,14 @@ def chart_pca(sample_n=1200):
     return fig
 
 
-def chart_vader_violin():
+def chart_vader_violin(fdf):
+    if fdf.empty:
+        return go.Figure()
     fig = go.Figure()
     for cid, p in PERSONAS.items():
-        sub = df[df["cluster"] == cid]
+        sub = fdf[fdf["cluster"] == cid]
+        if sub.empty:
+            continue
         fig.add_trace(go.Violin(
             y=sub["vader"],
             name=f"{p['icon']} {p['name']}",
@@ -701,9 +843,11 @@ def chart_vader_violin():
     return fig
 
 
-def chart_sentiment_pie_cluster(cid):
-    sub = df[df["cluster"] == cid]["sentiment"].value_counts()
+def chart_sentiment_pie_cluster(fdf, cid):
+    sub = fdf[fdf["cluster"] == cid]["sentiment"].value_counts()
     pal = {"Positive": "#10b981", "Neutral": "#f59e0b", "Negative": "#ef4444"}
+    if sub.empty:
+        return go.Figure()
     fig = go.Figure(go.Pie(
         labels=sub.index, values=sub.values,
         marker=dict(colors=[pal.get(l, "#9ca3af") for l in sub.index],
@@ -721,7 +865,130 @@ def chart_sentiment_pie_cluster(cid):
     return fig
 
 
-def make_wordcloud(cid):
+def chart_trend_over_time(fdf):
+    """Reviews trend over time grouped by sentiment."""
+    if fdf.empty:
+        return go.Figure()
+    time_gran = st.session_state.get("f_time_gran", "All Time")
+    grp_col = "quarter" if time_gran in ("By Quarter", "All Time") else "year_month"
+    data = fdf.groupby([grp_col, "sentiment"]).size().reset_index(name="count")
+    if data.empty:
+        return go.Figure()
+    pal = {"Positive": "#10b981", "Neutral": "#f59e0b", "Negative": "#ef4444"}
+    fig = go.Figure()
+    for sent in ["Positive", "Neutral", "Negative"]:
+        sub = data[data["sentiment"] == sent].sort_values(grp_col)
+        if sub.empty:
+            continue
+        fig.add_trace(go.Scatter(
+            x=sub[grp_col], y=sub["count"],
+            mode="lines+markers",
+            name=sent,
+            line=dict(color=pal[sent], width=2),
+            marker=dict(size=6),
+            hovertemplate=f"<b>{sent}</b><br>Period: %{{x}}<br>Reviews: %{{y:,}}<extra></extra>",
+        ))
+    fig.update_layout(
+        height=280,
+        margin=dict(t=8, b=8, l=0, r=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", y=-0.22, font=dict(size=11)),
+        xaxis=dict(gridcolor="#f3f4f6", tickangle=-30),
+        yaxis=dict(title="Reviews", gridcolor="#f3f4f6"),
+    )
+    return fig
+
+
+def chart_location_breakdown(fdf):
+    """Reviews by location and persona."""
+    if fdf.empty:
+        return go.Figure()
+    data = fdf.groupby(["location", "cluster"]).size().reset_index(name="count")
+    fig = go.Figure()
+    locations = sorted(fdf["location"].unique())
+    for cid, p in PERSONAS.items():
+        sub = data[data["cluster"] == cid]
+        loc_counts = {r["location"]: r["count"] for _, r in sub.iterrows()}
+        fig.add_trace(go.Bar(
+            name=f"{p['icon']} {p['name']}",
+            x=locations,
+            y=[loc_counts.get(l, 0) for l in locations],
+            marker_color=p["color"],
+            opacity=0.87,
+            hovertemplate="<b>" + p["name"] + "</b><br>%{x}: %{y:,}<extra></extra>",
+        ))
+    fig.update_layout(
+        barmode="stack", height=280,
+        margin=dict(t=8, b=8, l=0, r=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", y=-0.22, font=dict(size=11)),
+        xaxis=dict(gridcolor="#f3f4f6"),
+        yaxis=dict(title="Reviews", gridcolor="#f3f4f6"),
+    )
+    return fig
+
+
+def chart_avg_rating_over_time(fdf):
+    """Average rating over time per persona."""
+    if fdf.empty:
+        return go.Figure()
+    time_gran = st.session_state.get("f_time_gran", "All Time")
+    grp_col = "quarter" if time_gran in ("By Quarter", "All Time") else "year_month"
+    fig = go.Figure()
+    for cid, p in PERSONAS.items():
+        sub = fdf[fdf["cluster"] == cid]
+        if sub.empty:
+            continue
+        trend = sub.groupby(grp_col)["rating"].mean().reset_index().sort_values(grp_col)
+        fig.add_trace(go.Scatter(
+            x=trend[grp_col], y=trend["rating"],
+            mode="lines+markers",
+            name=f"{p['icon']} {p['name']}",
+            line=dict(color=p["color"], width=2),
+            marker=dict(size=6),
+            hovertemplate=f"<b>{p['name']}</b><br>Period: %{{x}}<br>Avg ★: %{{y:.2f}}<extra></extra>",
+        ))
+    fig.update_layout(
+        height=280,
+        margin=dict(t=8, b=8, l=0, r=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", y=-0.22, font=dict(size=11)),
+        xaxis=dict(gridcolor="#f3f4f6", tickangle=-30),
+        yaxis=dict(title="Avg Rating", range=[1, 5], gridcolor="#f3f4f6"),
+    )
+    return fig
+
+
+def chart_vader_location(fdf):
+    """Average VADER score by location and persona."""
+    if fdf.empty:
+        return go.Figure()
+    data = fdf.groupby(["location", "cluster"])["vader"].mean().reset_index()
+    locations = sorted(fdf["location"].unique())
+    fig = go.Figure()
+    for cid, p in PERSONAS.items():
+        sub = data[data["cluster"] == cid]
+        loc_vals = {r["location"]: r["vader"] for _, r in sub.iterrows()}
+        fig.add_trace(go.Bar(
+            name=f"{p['icon']} {p['name']}",
+            x=locations,
+            y=[loc_vals.get(l, 0) for l in locations],
+            marker_color=p["color"],
+            opacity=0.87,
+            hovertemplate="<b>" + p["name"] + "</b><br>%{x}: VADER %{y:.3f}<extra></extra>",
+        ))
+    fig.update_layout(
+        barmode="group", height=280,
+        margin=dict(t=8, b=8, l=0, r=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", y=-0.22, font=dict(size=11)),
+        xaxis=dict(gridcolor="#f3f4f6"),
+        yaxis=dict(title="Avg VADER Score", gridcolor="#f3f4f6"),
+    )
+    return fig
+
+
+def make_wordcloud(fdf, cid):
     wc_stops = {
         "product","amazon","one","would","could","really","also","even",
         "this","that","they","them","have","with","just","very","from",
@@ -732,7 +999,12 @@ def make_wordcloud(cid):
         "how","into","been","then","they","their","these","time","use",
     }
     cmaps = {0: "Blues", 1: "Greens", 2: "Reds", 3: "Oranges"}
-    text = " ".join(df[df["cluster"] == cid]["clean_text"].tolist())
+    sub = fdf[fdf["cluster"] == cid]
+    if sub.empty:
+        return None
+    text = " ".join(sub["clean_text"].tolist())
+    if not text.strip():
+        return None
     wc = WordCloud(
         width=800, height=320,
         background_color="white",
@@ -781,10 +1053,14 @@ def render_carousel():
 def render_navbar():
     now  = datetime.datetime.now().strftime("%I:%M %p")
     date = datetime.datetime.now().strftime("%b %d, %Y")
+    # Show active filter badge in navbar if any
+    filter_badge = ""
+    if filters_are_active():
+        filter_badge = '<span class="filter-active-badge">FILTERS ACTIVE</span>'
     st.markdown(f"""
     <div class="top-navbar">
       <div>
-        <div class="navbar-brand">🛒 Customer <span>Persona</span> Intelligence</div>
+        <div class="navbar-brand">🛒 Customer <span>Persona</span> Intelligence {filter_badge}</div>
         <div class="navbar-tagline">NLP-Based Customer Analytics Platform</div>
       </div>
       <div class="navbar-search">
@@ -804,10 +1080,11 @@ def render_navbar():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  SIDEBAR
+#  SIDEBAR  (navigation + interactive filters)
 # ═══════════════════════════════════════════════════════════════════════════════
 def render_sidebar():
     with st.sidebar:
+        # ── Brand header ──────────────────────────────────────────────────────
         st.markdown("""
         <div style="padding:22px 8px 14px 8px;text-align:center;">
           <div style="font-size:32px;margin-bottom:6px">🧠</div>
@@ -829,20 +1106,108 @@ def render_sidebar():
 
         for icon, label in nav:
             active = st.session_state.page == label
-            style = ("background:#ff9900 !important;color:#131921 !important;"
-                     "font-weight:700 !important;" if active else "")
             if st.button(f"  {icon}  {label}", key=f"nav_{label}",
                          use_container_width=True):
                 st.session_state.page = label
                 st.rerun()
-            if active:
-                st.markdown(
-                    f"<style>div[data-testid='stButton']:has(button[kind='secondary']"
-                    f"[data-testid='baseButton-secondary']){{background:#ff9900}}</style>",
-                    unsafe_allow_html=True)
 
+        # ── Filter Panel ──────────────────────────────────────────────────────
         st.markdown("""
-        <hr style="border:none;border-top:1px solid #232f3e;margin:16px 0 14px"/>
+        <hr style="border:none;border-top:1px solid #232f3e;margin:16px 0 10px"/>
+        <div class="filter-panel-header">🎛️ Dashboard Filters</div>
+        """, unsafe_allow_html=True)
+
+        # Persona / Cluster filter
+        persona_options = {i: f"{PERSONAS[i]['icon']} {PERSONAS[i]['name']}" for i in range(4)}
+        sel_persona_labels = st.multiselect(
+            "👥 Customer Persona",
+            options=list(persona_options.values()),
+            default=list(persona_options.values()),
+            key="_f_persona_labels",
+        )
+        # Map back to cluster ids
+        inv_map = {v: k for k, v in persona_options.items()}
+        st.session_state["f_personas"] = [inv_map[l] for l in sel_persona_labels]
+
+        # Sentiment filter
+        st.session_state["f_sentiment"] = st.multiselect(
+            "💬 Sentiment",
+            options=["Positive", "Neutral", "Negative"],
+            default=["Positive", "Neutral", "Negative"],
+            key="f_sentiment_widget",
+        )
+
+        # Rating filter
+        r_range = st.slider(
+            "⭐ Star Rating Range",
+            min_value=1, max_value=5, value=(1, 5), step=1,
+            key="f_rating_widget",
+        )
+        st.session_state["f_rating"] = r_range
+
+        # Location filter
+        all_locs = sorted(df["location"].unique().tolist())
+        sel_locs = st.multiselect(
+            "📍 Location",
+            options=all_locs,
+            default=all_locs,
+            key="f_location_widget",
+        )
+        st.session_state["f_location"] = sel_locs if sel_locs else all_locs
+
+        # Time granularity
+        time_gran = st.radio(
+            "📅 Time Period",
+            options=["All Time", "By Quarter", "By Month"],
+            key="f_time_gran",
+            horizontal=False,
+        )
+
+        if time_gran == "By Quarter":
+            all_quarters = sorted(df["quarter"].unique().tolist())
+            st.session_state["f_quarters"] = st.multiselect(
+                "Select Quarters",
+                options=all_quarters,
+                default=all_quarters,
+                key="f_quarters_widget",
+            )
+        elif time_gran == "By Month":
+            all_months = sorted(df["year_month"].unique().tolist())
+            st.session_state["f_months"] = st.multiselect(
+                "Select Months",
+                options=all_months,
+                default=all_months[-6:],   # last 6 months by default
+                key="f_months_widget",
+            )
+
+        # Active filter summary
+        fdf = get_filtered_df()
+        total = len(df)
+        filtered_n = len(fdf)
+        pct = filtered_n / total * 100 if total > 0 else 0
+        st.markdown(f"""
+        <div class="active-filter-summary">
+          <b>Showing:</b> {filtered_n:,} of {total:,} reviews<br>
+          <b>Coverage:</b> {pct:.1f}% of dataset<br>
+          <b>Personas:</b> {len(st.session_state.get('f_personas', list(range(4))))} selected
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Reset button
+        if st.button("🔄 Reset All Filters", key="reset_filters", use_container_width=True):
+            for k in ["_f_persona_labels", "f_sentiment_widget", "f_rating_widget",
+                      "f_location_widget", "f_time_gran", "f_quarters_widget", "f_months_widget"]:
+                if k in st.session_state:
+                    del st.session_state[k]
+            for k in ["f_personas", "f_sentiment", "f_rating", "f_location",
+                      "f_quarters", "f_months"]:
+                if k in st.session_state:
+                    del st.session_state[k]
+            st.rerun()
+
+        # ── Dataset stats ──────────────────────────────────────────────────────
+        st.markdown("""
+        <hr style="border:none;border-top:1px solid #232f3e;margin:14px 0 14px"/>
         <div style="font-size:10px;color:#6b7280;text-transform:uppercase;
                     letter-spacing:0.6px;padding:0 8px 10px 8px">Dataset Stats</div>
         """, unsafe_allow_html=True)
@@ -973,21 +1338,23 @@ def chatbot(msg: str) -> str:
 #  PAGE: HOME
 # ═══════════════════════════════════════════════════════════════════════════════
 def page_home():
+    fdf = get_filtered_df()
     st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
 
     # ── KPI Cards ─────────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">📈 Key Performance Indicators</div>',
                 unsafe_allow_html=True)
 
-    pct_pos = (df["sentiment"] == "Positive").mean() * 100
-    pct_neg = (df["sentiment"] == "Negative").mean() * 100
+    pct_pos = (fdf["sentiment"] == "Positive").mean() * 100 if len(fdf) else 0
+    pct_neg = (fdf["sentiment"] == "Negative").mean() * 100 if len(fdf) else 0
+    n_clusters = fdf["cluster"].nunique()
 
     kpis = [
-        ("#3b82f6", "👥", "Total Customers",    f"{len(df):,}",
-         f"{df['ProductId'].nunique():,} unique products"),
+        ("#3b82f6", "👥", "Filtered Reviews", f"{len(fdf):,}",
+         f"{fdf['ProductId'].nunique():,} unique products"),
         ("#10b981", "😊", "Positive Sentiment", f"{pct_pos:.1f}%",
          f"Negative: {pct_neg:.1f}%"),
-        ("#f59e0b", "🗂️", "Number of Clusters", "4",
+        ("#f59e0b", "🗂️", "Active Clusters", str(n_clusters),
          "Budget · Quality · Dissatisfied · Loyal"),
     ]
 
@@ -1020,7 +1387,7 @@ def page_home():
         st.markdown("""<div class="chart-card">
         <div class="chart-card-title">🍩 Cluster Distribution</div>""",
                     unsafe_allow_html=True)
-        st.plotly_chart(chart_cluster_donut(), use_container_width=True,
+        st.plotly_chart(chart_cluster_donut(fdf), use_container_width=True,
                         config={"displayModeBar": False})
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1028,7 +1395,28 @@ def page_home():
         st.markdown("""<div class="chart-card">
         <div class="chart-card-title">📊 Sentiment per Persona (%)</div>""",
                     unsafe_allow_html=True)
-        st.plotly_chart(chart_sentiment_stacked(), use_container_width=True,
+        st.plotly_chart(chart_sentiment_stacked(fdf), use_container_width=True,
+                        config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Trend over time + Location row ────────────────────────────────────────
+    st.markdown('<div class="section-title">📅 Trends & Location Insights</div>',
+                unsafe_allow_html=True)
+
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown("""<div class="chart-card">
+        <div class="chart-card-title">📈 Review Volume Over Time (by Sentiment)</div>""",
+                    unsafe_allow_html=True)
+        st.plotly_chart(chart_trend_over_time(fdf), use_container_width=True,
+                        config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c4:
+        st.markdown("""<div class="chart-card">
+        <div class="chart-card-title">📍 Reviews by Location & Persona</div>""",
+                    unsafe_allow_html=True)
+        st.plotly_chart(chart_location_breakdown(fdf), use_container_width=True,
                         config={"displayModeBar": False})
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1036,7 +1424,7 @@ def page_home():
     st.markdown('<div class="section-title">⭐ Star Rating Distribution per Persona</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
-    st.plotly_chart(chart_rating_dist(), use_container_width=True,
+    st.plotly_chart(chart_rating_dist(fdf), use_container_width=True,
                     config={"displayModeBar": False})
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1045,18 +1433,23 @@ def page_home():
                 unsafe_allow_html=True)
     rows = []
     for cid, p in PERSONAS.items():
-        sub = df[df["cluster"] == cid]
+        sub = fdf[fdf["cluster"] == cid]
+        if sub.empty:
+            continue
         rows.append({
             "Persona":       f"{p['icon']}  {p['name']}",
             "Reviews":       f"{len(sub):,}",
-            "Share %":       f"{len(sub)/len(df)*100:.1f}%",
+            "Share %":       f"{len(sub)/len(fdf)*100:.1f}%" if len(fdf) > 0 else "—",
             "Avg ★":         f"{sub['rating'].mean():.2f}",
             "% Positive":    f"{(sub['sentiment']=='Positive').mean()*100:.1f}%",
             "% Negative":    f"{(sub['sentiment']=='Negative').mean()*100:.1f}%",
             "Avg VADER":     f"{sub['vader'].mean():.3f}",
             "Avg Words":     f"{sub['word_count'].mean():.0f}",
         })
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    if rows:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("No data matches the current filters.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1065,8 +1458,10 @@ def page_home():
 #  PAGE: ANALYTICS
 # ═══════════════════════════════════════════════════════════════════════════════
 def page_analytics():
+    fdf = get_filtered_df()
     st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
 
+    # ── PCA scatter ───────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">🔬 PCA Cluster Scatter Plot</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
@@ -1075,23 +1470,65 @@ def page_analytics():
     Each dot = one review. Proximity = textual similarity.
     Tight clusters = strong internal coherence. 1,200 reviews sampled for performance.
     </div>""", unsafe_allow_html=True)
-    st.plotly_chart(chart_pca(), use_container_width=True,
+    st.plotly_chart(chart_pca(fdf), use_container_width=True,
                     config={"displayModeBar": True, "scrollZoom": True})
     st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Avg rating + VADER over time ──────────────────────────────────────────
+    st.markdown('<div class="section-title">📅 Time-Series Analysis</div>',
+                unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("""<div class="chart-card">
+        <div class="chart-card-title">⭐ Avg Rating Over Time by Persona</div>""",
+                    unsafe_allow_html=True)
+        st.plotly_chart(chart_avg_rating_over_time(fdf), use_container_width=True,
+                        config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c2:
+        st.markdown("""<div class="chart-card">
+        <div class="chart-card-title">📈 Review Volume Trend by Sentiment</div>""",
+                    unsafe_allow_html=True)
+        st.plotly_chart(chart_trend_over_time(fdf), use_container_width=True,
+                        config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Location + VADER by location ──────────────────────────────────────────
+    st.markdown('<div class="section-title">📍 Location Analysis</div>',
+                unsafe_allow_html=True)
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown("""<div class="chart-card">
+        <div class="chart-card-title">📍 Reviews by Location & Persona</div>""",
+                    unsafe_allow_html=True)
+        st.plotly_chart(chart_location_breakdown(fdf), use_container_width=True,
+                        config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c4:
+        st.markdown("""<div class="chart-card">
+        <div class="chart-card-title">🧭 Avg VADER Score by Location & Persona</div>""",
+                    unsafe_allow_html=True)
+        st.plotly_chart(chart_vader_location(fdf), use_container_width=True,
+                        config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
 
     # ── Top keywords grid ─────────────────────────────────────────────────────
     st.markdown('<div class="section-title">🏷️ Top Keywords per Cluster</div>',
                 unsafe_allow_html=True)
+    active_clusters = fdf["cluster"].unique()
     cols = st.columns(4)
     for cid, p in PERSONAS.items():
         with cols[cid]:
+            opacity = "1" if cid in active_clusters else "0.35"
             tags = "".join([
                 f'<span class="kw-tag">{w}</span>'
                 for w in TOP_KW[cid]
             ])
             st.markdown(f"""
             <div style="background:{p['bg']};border-radius:14px;padding:18px;
-                        border-top:4px solid {p['color']};min-height:220px;">
+                        border-top:4px solid {p['color']};min-height:220px;opacity:{opacity}">
               <div style="font-size:22px;margin-bottom:5px">{p['icon']}</div>
               <div style="font-size:13px;font-weight:700;color:{p['color']};
                           margin-bottom:12px">{p['name']}</div>
@@ -1108,7 +1545,7 @@ def page_analytics():
     +1 = very positive). The inner box shows median and quartiles.
     Dissatisfied Users has the widest spread — high variance in review sentiment.
     </div>""", unsafe_allow_html=True)
-    st.plotly_chart(chart_vader_violin(), use_container_width=True,
+    st.plotly_chart(chart_vader_violin(fdf), use_container_width=True,
                     config={"displayModeBar": False})
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1132,6 +1569,7 @@ def page_analytics():
 #  PAGE: PERSONAS
 # ═══════════════════════════════════════════════════════════════════════════════
 def page_personas():
+    fdf = get_filtered_df()
     st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">👤 Customer Persona Explorer</div>',
                 unsafe_allow_html=True)
@@ -1144,7 +1582,12 @@ def page_personas():
     cid = next(i for i in range(4)
                if f"{PERSONAS[i]['icon']}  {PERSONAS[i]['name']}" == selected)
     p   = PERSONAS[cid]
-    sub = df[df["cluster"] == cid]
+    sub = fdf[fdf["cluster"] == cid]
+
+    if sub.empty:
+        st.warning(f"No reviews match the current filters for {p['name']}. Adjust the sidebar filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
 
     pct_pos = (sub["sentiment"] == "Positive").mean() * 100
     pct_neg = (sub["sentiment"] == "Negative").mean() * 100
@@ -1159,7 +1602,7 @@ def page_personas():
           <div class="persona-name" style="color:{p['color']}">{p['name']}</div>
           <div class="persona-meta">
             Cluster {cid} &nbsp;·&nbsp; {len(sub):,} reviews
-            ({len(sub)/len(df)*100:.1f}% of dataset)
+            ({len(sub)/len(fdf)*100:.1f}% of filtered dataset)
           </div>
         </div>
       </div>
@@ -1190,7 +1633,7 @@ def page_personas():
         st.markdown("""<div class="chart-card">
         <div class="chart-card-title">Sentiment Breakdown</div>""",
                     unsafe_allow_html=True)
-        st.plotly_chart(chart_sentiment_pie_cluster(cid),
+        st.plotly_chart(chart_sentiment_pie_cluster(fdf, cid),
                         use_container_width=True, config={"displayModeBar": False})
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1215,17 +1658,70 @@ def page_personas():
                         config={"displayModeBar": False})
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # ── Trend + location row ──────────────────────────────────────────────────
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown("""<div class="chart-card">
+        <div class="chart-card-title">📈 Rating Trend Over Time</div>""",
+                    unsafe_allow_html=True)
+        time_gran = st.session_state.get("f_time_gran", "All Time")
+        grp_col = "quarter" if time_gran in ("By Quarter", "All Time") else "year_month"
+        trend = sub.groupby(grp_col)["rating"].mean().reset_index().sort_values(grp_col)
+        fig_t = go.Figure(go.Scatter(
+            x=trend[grp_col], y=trend["rating"],
+            mode="lines+markers",
+            line=dict(color=p["color"], width=2),
+            marker=dict(size=7, color=p["color"]),
+            fill="tozeroy", fillcolor=p["color"] + "18",
+            hovertemplate="Period: %{x}<br>Avg ★: %{y:.2f}<extra></extra>",
+        ))
+        fig_t.update_layout(
+            height=230, margin=dict(t=8, b=8, l=0, r=0),
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(gridcolor="#f3f4f6", tickangle=-30),
+            yaxis=dict(title="Avg Rating", range=[1, 5], gridcolor="#f3f4f6"),
+        )
+        st.plotly_chart(fig_t, use_container_width=True, config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c4:
+        st.markdown("""<div class="chart-card">
+        <div class="chart-card-title">📍 Reviews by Location</div>""",
+                    unsafe_allow_html=True)
+        loc_counts = sub["location"].value_counts()
+        fig_loc = go.Figure(go.Bar(
+            x=loc_counts.index.tolist(),
+            y=loc_counts.values,
+            marker_color=p["color"],
+            marker_opacity=0.87,
+            text=loc_counts.values,
+            textposition="outside",
+            hovertemplate="%{x}: %{y:,} reviews<extra></extra>",
+        ))
+        fig_loc.update_layout(
+            height=230, margin=dict(t=8, b=0, l=0, r=0),
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(gridcolor="#f3f4f6"),
+            yaxis=dict(gridcolor="#f3f4f6"),
+            showlegend=False,
+        )
+        st.plotly_chart(fig_loc, use_container_width=True, config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
+
     # ── Word cloud ────────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">☁️ Word Cloud</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     with st.spinner("Generating word cloud…"):
-        wc_b64 = make_wordcloud(cid)
-    st.markdown(
-        f'<img src="data:image/png;base64,{wc_b64}" '
-        f'style="width:100%;border-radius:8px"/>',
-        unsafe_allow_html=True,
-    )
+        wc_b64 = make_wordcloud(fdf, cid)
+    if wc_b64:
+        st.markdown(
+            f'<img src="data:image/png;base64,{wc_b64}" '
+            f'style="width:100%;border-radius:8px"/>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("Not enough text data to generate word cloud with current filters.")
     st.markdown("</div>", unsafe_allow_html=True)
 
     # ── Sample reviews ────────────────────────────────────────────────────────
